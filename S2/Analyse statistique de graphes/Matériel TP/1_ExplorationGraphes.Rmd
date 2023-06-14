@@ -1,0 +1,133 @@
+---
+title: "Exploration de graphes"
+author: "Tabea Rebafka & Catherine Matias"
+date: "Janvier 2023"
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Dans ce TP nous allons découvrir les  fonctions du package ``igraph`` pour calculer différentes statistiques d'un graphe. Chargeons la bibliothèque ``igraph`` :
+```{r}
+library(igraph)
+```
+ainsi que deux jeux de données déjà utilisés lors du TP précédent :
+```{r}
+miserab <- read_graph(file='lesmis.gml', format="gml") 
+```
+```{r}
+friends <- read.table(file='Friendship-network_data_2013.csv')
+amis <- graph_from_data_frame(friends, directed=TRUE) 
+```
+
+
+## 1. Propriétés simples d'un  graphe
+
+Rappelons les fonctions suivantes pour déterminer l'ordre et la taille d'un graphe, obtenir la liste des noeuds ou d'arêtes ainsi que savoir si le graphe est orienté ou non :
+```{r}
+vcount(miserab)
+ecount(miserab)
+V(miserab)
+E(miserab)
+is.directed(miserab)
+```
+et pour le graphe d'amis:
+```{r}
+vcount(amis)
+ecount(amis)
+V(amis)
+E(amis)
+is.directed(amis)
+```
+
+
+## 2. La suite des degrés  avec ``igraph``
+
+Dans le cas d'un graphe non dirigé, calcul des degrés :
+```{r}
+degree(miserab)
+```
+
+
+Dans le cas d'un graphe dirigé, calcul des degrés entrants et sortants :
+```{r}
+degree(amis, mode="in")
+degree(amis, mode="out")
+```
+
+Distribution empirique des degrés :
+```{r}
+degree_distribution(miserab)
+degree_distribution(amis, mode="out") 
+```
+
+Représentation graphique de la distribution empirique des degrés :
+```{r}
+barplot(degree_distribution(miserab), names.arg=as.character(0:max(degree(miserab))), col='green', main='Degrés des noeuds du graphe Les Misérables')
+```
+
+
+### Les degrés via la  matrice d'adjacence
+On peut vérifier à la main  que les degrés des noeuds sont bien donnés par la somme de la ligne ou de la colonne de la matrice d'adjacence :
+```{r}
+Aamis <- as_adj(amis)
+sum(Aamis[1,])
+# rowSums(Aamis) # attention ça ça ne fonctionne pas car ce n'est pas une matrice ! 
+rowSums(as.matrix(Aamis)) # Soyez attentifs au format de cette sortie !
+degree(amis, mode="out") # idem 
+sum(Aamis[,1])
+colSums(as.matrix(Aamis)) # Soyez attentifs au format de cette sortie !
+degree(amis, mode="in") # idem 
+```
+ 
+
+## 3. Autres indicateurs
+
+Familiarisez-vous avec les fonctions suivantes d'``igraph`` pour un graphe ``G``, et 
+appliquez-les aux graphes Les misérables et amis :
+
+```{r, eval=F}
+components(G)                      
+edge_density(G)
+diameter(G, directed=TRUE, unconnected=FALSE)
+diameter(G, directed=TRUE, unconnected=TRUE)
+get_diameter(G, directed=TRUE)
+count_triangles(G) 
+transitivity(G)
+
+neighbors(G, 1,  mode='out')
+neighbors(G, 1, mode='in')
+neighbors(G, 1, mode='all')
+ 
+K3 <- cliques(G, min=3, max=3)
+K3[[1]] 
+length(K3) 
+sum(count_triangles(G))/3
+
+closeness(G,mode="total") 
+closeness(G)
+betweenness(G)
+plot(G, vertex.size=betweenness(G))
+```
+ 
+
+ 
+## Exercice 2.  
+ - Analysez les graphes  de l'exercice 1 (précédent TP) avec les statistiques descriptives que vous connaissez. 
+ - Vérifiez que vous comprenez quelles formules sont utilisées par chacune des fonctions ci-dessus. Est-ce qu'elles correspondent aux définitions vues en cours ? Soyez en particulier attentifs aux cas des graphes dirigés et au  problème de la connexité. 
+ - Certaines statistiques ne font sens que pour des graphes connexes. Dans ce cas, sélectionnez la plus grand composante connexe du graphe et appliquez le calcul de la statistique sur cette composante.
+ - Comptez les 2-stars et les 3-stars dans les graphes. 
+ - Faites de même sur le célèbre graphe Karaté Club (disponible dans R): In 1977, W. W. Zachary recorded interactions in a karate club for two years. During observation, a conflict developed between the administrator and the instructor.  
+```{r}
+library(igraphdata)
+data(karate)
+```
+
+
+

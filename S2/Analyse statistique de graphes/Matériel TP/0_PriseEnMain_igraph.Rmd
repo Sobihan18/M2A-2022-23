@@ -1,0 +1,247 @@
+---
+title: "Prise en main du package igraph"
+author: "Tabea Rebafka & Catherine Matias"
+date: "Janvier 2023"
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  chunk_output_type: inline
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Le but de ce TP est de se familiariser avec le package ``igraph`` de R.
+
+Site officiel : http://igraph.org/r/
+
+Faites attention : igraph est développé également en C et Python. Si vous faites une recherche en passant par un moteur, vous risquez facilement d'atterrir sur le site http://igraph.org/c/ plutôt que http://igraph.org/r/
+
+Pour les curieux, si vous souhaitez apprendre encore plus de fonctions proposées par ``igraph``, vous pouvez consulter ce tutoriel : http://kateto.net/networks-r-igraph
+
+
+###  Package ``igraph`` 
+Installez le package ``igraph`` et chargez la bibliothèque 
+
+```{r, eval=F}
+install.packages("igraph")
+```
+```{r}
+library(igraph)
+```
+## 1. Créer un graphe jouet à la main
+### 1.1. En donnant une liste d'arêtes
+La liste d'arêtes peut-être donnée sous deux formats: un  vecteur qui concatène les indices des noeuds reliés ou bien une matrice à deux lignes. 
+
+```{r}
+EdgeList1 <- c(1,2, 1,3, 2,3, 3,5, 2,4, 4,5, 5,6, 4,6, 4,7, 6,7, 3,4)
+EdgeList2 <- matrix(EdgeList1,nrow=2)
+g1 <- graph(edges=EdgeList1, directed=FALSE)
+g2 <- graph(edges=EdgeList2, directed=FALSE)
+par(mfrow=c(1,2))
+plot(g1)
+plot(g2)
+```
+
+On obtient un objet de type ``igraph`` :  
+```{r}
+class(g1)
+```
+On peut indiquer le nombre $n$ de noeuds du graphe quand certains noeuds sont isolés :
+```{r}
+g3 <- graph(edges=EdgeList1, n=9, directed=FALSE)
+plot(g3)
+```
+
+Les noeuds ne sont pas nécessairement de type numerique :
+```{r}
+EdgeListNames <- c("Eric", "Erwan", "Erwan","Ana")
+g4 <- graph(edges=EdgeListNames)
+plot(g4)
+# Notez que par défaut le graphe est dirigé 
+```
+Avec des noeuds isolés :
+```{r}
+g5 <- graph(edges=EdgeListNames, isolates="Paul")
+plot(g5)
+```
+
+### 1.2. En important un ``data.frame`` contenant la liste d'arêtes :
+
+Fichier de données disponible sur le site : http://www.sociopatterns.org/datasets/high-school-contact-and-friendship-networks/ et sur Moodle.
+
+Données (au format csv) concernant des amitiés entre lycéens.
+```{r}
+friends <- read.table(file='Friendship-network_data_2013.csv')
+head(friends)
+amis <- graph_from_data_frame(friends, directed=TRUE) 
+amis
+class(amis)
+plot(amis)
+```
+
+ou en important plusieurs ``data.frame`` (fichiers disponibles sur Moodle) :
+
+Données concernant les medias ; 2 fichiers distincts, l'un contient la liste des medias avec des caractéristiques et l'autre contient les interactions (valuées et de plusieurs types) :
+
+```{r}
+nodes <- read.csv("Dataset1-Media-Example-NODES.csv", header=TRUE, as.is=TRUE)
+head(nodes)
+links <- read.csv("Dataset1-Media-Example-EDGES.csv", header=TRUE, as.is=TRUE)
+head(links)
+net <- graph_from_data_frame(d=links, vertices=nodes, directed=TRUE) 
+class(net)
+plot(net)
+```
+
+### 1.3. À partir d'un fichier dont le format est adapté à ``igraph`` :
+
+La fonction ``read_graph`` adaptée à certains formats de graphe :
+
+```{r, eval=F}
+read_graph(file, format = c("edgelist", "pajek", "ncol", "lgl", "graphml", "dimacs", "graphdb", "gml", "dl"), ...)
+```
+
+Graphe des personnages de l'oeuvre Les Misérables : lien si co-occurrence dans un chapitre. 
+The file lesmis.gml contains the weighted network of co-appearances of characters in Victor Hugo's novel *Les Miserables*.  Nodes represent characters as indicated by the labels and edges connect any pair of characters that appear in the same chapter of the book.  The values on the edges are the number of such co-appearances. 
+ http://www-personal.umich.edu/~mejn/netdata/
+ 
+```{r}
+miserab <- read_graph(file='lesmis.gml', format="gml") 
+class(miserab)
+plot(miserab)
+```
+
+
+### 1.4. À partir d'une matrice d'adjacence
+
+```{r}
+A <- matrix(c(0,0,0,0,0,0,1,1,0,1,0,1,0,1,1,0), 4, 4)
+A
+plot(graph_from_adjacency_matrix(A, mode='undirected'))
+```
+
+
+## 2. Matrice d'adjacence
+On peut convertir un graphe en  matrice d'adjacence :
+```{r}
+Aamis <- as_adj(amis)
+dim(Aamis)
+```
+Attention, par défaut, ``as_adj`` crée une matrice au format *sparse* et certaines opérations classiques ne sont pas possibles :
+```{r, error=T}
+is.matrix(Aamis)
+class(Aamis)
+t(Aamis)
+```
+Pour y remédier, il suffit d'utliser l'option ``sparse=FALSE`` :
+```{r}
+Aamis <- as_adj(amis, sparse=FALSE)
+is.matrix(Aamis)
+```
+
+
+
+## 3. Propriétés simples d'un  graphe
+
+Familiarisez vous avec les fonctions suivantes en les appliquant sur les graphes crées ci-dessus. Prenez l'habitude d'utiliser la documentation du package (``help()``) et de la **LIRE** !
+```{r, eval=F}
+vcount()
+ecount()
+V()
+E()
+is.directed()
+```
+
+
+
+
+## 4. Visualisation de graphes
+
+### 4.1 Network layouts : algorithmes usuels de visualisation 
+
+Pour en savoir plus sur les différentes visualisations : https://igraph.org/r/doc/layout_.html
+
+```{r}
+plot(amis)
+```
+Pour choisir un layout spécifique, on utilise l'option suivante (utilisez la complétion automatique pour voir les layout possibles) : 
+
+```{r}
+plot(amis, layout=layout_as_star)
+```
+```{r}
+plot(amis, layout=layout_in_circle)
+```
+
+```{r}
+plot(amis, layout=layout_randomly)
+```
+
+Deux algorithmes de visualisation populaires pour avoir des visulatisations jugées "esthétiques".
+Si vous souhaitez plus d'infos : https://halshs.archives-ouvertes.fr/halshs-00839905/document
+```{r}
+plot(amis, layout=layout.fruchterman.reingold)
+```
+```{r}
+plot(amis, layout=layout.kamada.kawai)
+```
+
+
+ 
+
+### 4.2 Embellir ses figures avec  ``igraph``
+
+Pour voir toutes les option de ``plot()`` tapez ``?igraph.plotting``.
+
+Les options les plus courantes sont les suivantes :
+
+- ``vertex.color``, ``vertex.shape``,	``vertex.size``, ``vertex.label`` couleur, forme, taille et étiquettes  des noeuds
+- ``edge.color``, ``edge.label`` couleur et étiquettes des arêtes
+
+```{r}
+plot(net)
+plot(net, edge.arrow.size=.4)
+plot(net, vertex.color="orange", edge.color="blue", vertex.label.color="black", edge.arrow.size=.4)
+```
+
+
+Si on veut utiliser des infos supplémentaires pour colorier les noeuds en fonction des covariables (ici le type de média, la taille des noeuds en fonction de l'audience, l'épaisseur des arêtes en fonction de leur poids...) ou sur les arêtes (ici valuées et de différents types)
+On trouve ces infos ici :
+```{r}
+vertex_attr(net)
+V(net)$media
+edge_attr(net)
+E(net)$weight
+```
+
+```{r}
+plot(net, vertex.label=V(net)$media, edge.arrow.size=.4)
+plot(net, vertex.label=V(net)$media, edge.arrow.size=.4, vertex.color=V(net)$media.type)
+plot(net, vertex.label=V(net)$media, edge.arrow.size=.4, vertex.color=V(net)$media.type, vertex.size=V(net)$audience.size)
+plot(net, vertex.label=V(net)$media, vertex.color=V(net)$media.type, vertex.size=V(net)$audience.size, edge.width=E(net)$weight)
+```
+
+Pour changer la couleur du lien en fonction de son type 
+
+```{r}
+E(net)$color[E(net)$type=="hyperlink"]<-"blue"
+E(net)$color[E(net)$type=="mention"]<-"red"
+plot(net, edge.arrow.size=.4)
+```
+
+
+# Exercice 1
+
+Cherchez sur le web  des graphes  et importez-les    sur  votre  machine  (vous  garderez l'adresse  de récupération des données  en commentaire dans
+  votre fichier). Variez les formats d'origine si vous pouvez, et le
+  type de graphe (dirigé ou non).   Déterminez l'ordre et la taille des graphes et visualisez-les.
+  
+  
+Voici une liste de serveurs proposant des données réelles de graphes :
+
+- SocioPatterns research project http://www.sociopatterns.org/datasets/
+- UC Irvine Network data repository http://networkdata.ics.uci.edu
+- Page de Mark Newman http://www-personal.umich.edu/~mejn/netdata/
+- Stanford Network Analysis Project (collection of large networks)  https://snap.stanford.edu/data/index.html
+ 

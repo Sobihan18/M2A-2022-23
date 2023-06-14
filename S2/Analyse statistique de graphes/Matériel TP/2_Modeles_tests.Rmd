@@ -1,0 +1,79 @@
+---
+title: "Modèles simples et tests d'hypothèses"
+author: "Catherine Matias"
+date: "Février 2023"
+output:
+  html_document:
+    df_print: paged
+---
+ 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+ 
+Dans ce TP nous allons utiliser des modèles de graphes aléatoires très simples (Erdös-Rényi, modèle de configuration) pour tester des hypothèses sur les graphes. 
+
+
+## 1. Adéquation du modèle d'Erdös-Rényi 
+On commence par se poser la question de savoir si le modèle d'Erdös-Rényi est bien approprié pour décrire des graphes. 
+
+On rappelle que le terme 'modèle d'Erdös-Rényi' recouvre en fait deux versions lègèrement différentes du même principe, à savoir le modèle $G(n,p)$ qui considère l'ensemble des graphes de $n$ noeuds dans lesquels chaque arête apparaît de façon iid selon une loi $\mathcal{B}(p)$ et le modèle $G(n,M)$ qui considère l'ensemble des graphes avec $n$ noeuds et $M$ arêtes muni de la loi uniforme.  Ici, on se concentre sur le modèle $G(n,p)$.
+
+
+
+### Modèle $G(n,p)$ 
+ 
+La fonction ``sample_gnp()`` du package ``igraph`` permet de simuler un graphe d'Erdös-Rényi. On donne comme paramètres le nombre $n$  de noeuds et  la probabilité $p$ de connection entre deux noeuds. 
+
+Simulons deux graphes différents : un faiblement connecté, et un très connecté :
+```{r }
+library("igraph")
+set.seed(1)
+n <- 40
+p1 <- 0.1
+p2 <- 0.7
+G1 <- sample_gnp(n, p1)
+G2 <- sample_gnp(n, p2)
+par(mfrow = c(1, 2))
+plot(G1)
+plot(G2)
+```
+ 
+ 
+### Exercice 1
+
+1. [Sans R] Donner un estimateur $\hat{p}$ de $p$ dans le modèle $G(n,p)$, et rappeler la distribution marginale du degré $D_i$ du noeud $i$ dans $G(n,p)$.
+2. Simuler des graphes $G(n,p)$ pour différentes valeurs de $n$ et de $p$. Pour chaque graphe simulé,
+ évaluez l'estimateur $\hat p$ et comparez à $p$. De plus, tracez la distribution empirique  des degrés des noeuds  et   superposez la distribution des degrés attendus sous le modèle  $G(n,p)$.   Qu'observez-vous  ?
+
+### Exercice 2
+Reprenez un des graphes  réels analysés lors du dernier TP. 
+Quelle  est la  valeur  estimée  de $p$? Tracez la distribution empirique  des degrés des noeuds  et
+ superposez la distribution des degrés attendus sous le modèle $G(n,p)$. Que  constatez-vous ?
+    
+   
+## 2. Modèles de configuration 
+Cette fois on considère la famille des modèles de configuration. 
+
+
+### Exercice 3
+On commence par ajuster une loi de puissance sur le graphe utilisé à l'exercice précédent. Utilisez pour cela la fonction 'fit_power_law' (commencez par lire l'aide pour comprendre son fonctionnement). Puis représentez la distribution empirique des degrés et superposez la loi de puissance avec le paramètre estimé. Attention à la constante de normalisation !
+ 
+ 
+### Exercice 4 
+On considère le modèle random-degree $RD(\underline{d})$ où $\underline{d}$ est la suite des degrés du graphe observé. Comparez la valeur observée du degré $d_i$ et la valeur moyenne $\mathbb{E}(D_i)$ sous le modèle  $RD(\underline{d})$ (pour différents choix de la constante multiplicative). 
+
+
+
+## 3. Tests 
+On va se servir des modèles de configuration pour mettre en oeuvre des tests simples sur les statistiques d'un graphe.  
+
+### Exercice 5 
+1. Ecrivez deux fonctions de simulation de graphes sous le modèle à degrés fixés $FD(\underline d)$ avec les algorithmes de matching et de re-branchement. 
+2. Reprenez un de vos exemples réels : utilisez les deux fonctions pour générer des graphes qui ont la même suite de  degrés que votre graphe réel. On pourra comparer le nombre de triangles dans les deux graphes, ou toute autre statistique de votre choix. Commentez.
+3. On veut tester si  le nombre d'occurrences du triangle dans le graphe observé est significativement trop grand ou trop petit par rapport à la valeur attendue sous le modèle nul $FD(\underline d)$. On utilise pour cela  des simulations de  Monte-Carlo. Plus précisément, on génère un grand nombre  de graphes ayant  la même suite de degrés et on compte le nombre de triangles pour  chacun d'eux.  Pour générer ces graphes, est-il raisonnable d'utiliser   les algorithmes de  matching
+    et de re-branchement que vous avez codé ? Si non utilisez
+    directement le package ``igraph``. 
+  Tracez un histogramme de cette distribution. Que pensez-vous de la valeur observée dans votre graphe réel?
+
+

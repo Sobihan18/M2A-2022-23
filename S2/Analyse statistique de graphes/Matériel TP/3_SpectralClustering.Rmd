@@ -1,0 +1,79 @@
+---
+title: "Spectral clustering"
+author: "Catherine Matias"
+date: "23/02/2023"
+output:
+  html_document:
+    df_print: paged
+---
+ 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##  Partie 1 : Algorithmes de spectral clustering
+Le but de cette partie  est d'implementer  différents algorithmes de spectral clustering et d'analyser leur comportement sur quelques graphes simples. 
+
+### Exercice 1
+
+Rappel : La fonction `eigen()` donne le spectre d'une matrice.
+
+1. Ecrire une fonction R qui effectue le **spectral clustering normalisé**. Cette fonction prend en argument une matrice d'adjacence et le nombre de clusters souhaité. Elle peut afficher les valeurs propres de la matrice laplacienne $L_N$ et renvoie le clustering obtenu. 
+2. Simuler un petit graphe dont vous connaissez les communautés et tester votre fonction. On pourra prendre par exemple un graphe avec plusieurs composantes connexes, chacune étant $G(n,p$ avec $p$ assez grand. Puis dans un second temps on rend ce graphe connexe.  
+3. Faites de même pour l'**absolute spectral clustering** basé sur $L_\text{abs}$.
+
+### Exercice 2
+Simuler différents  graphes et analyser le spectre des laplaciens $L_N$ et $L_{\text{abs}}$ associés. Est-ce que la méthode du eigengap permet de choisir un nombre de clusters raisonnable ?
+Vérifier quelle méthode retrouve le bon clustering. D'ailleurs, comment compare-t-on les clusters obtenus par deux  algorithmes de  classification différente  ? (Il  faut faire attention au problème du ``label switching'').
+
+Quelques idées de graphes à simuler :
+
+- un graphe $G(n,p)$ (avec  une seule composante connexe) (utiliser la fonction `sample_gnp()`);
+- un graphe avec deux, trois ou quatre communautés (essayer `sample_sbm()`); 
+- un graphe en étoile ; 
+- un graphe bi-partie (complet entre les deux parties) ; 
+- deux étoiles connectées par une arête. 
+  
+
+### Exercice 3
+
+ Reprenez un des graphes réels vus aux TP précédents (graphe friends ou karate par exemple) et appliquez les algorithmes de clustering sur ces données. Interprétez vos résultats.
+
+
+##  Partie 2 : Graphes de similarité 
+Dans cette partie, nous analysons l'effet du choix du graphe de similarité ainsi que l'effet du choix de la méthode sur le clustering obtenu.
+
+Nous simulons un jeu de données de  $n = 100$   points $x_i$ dans $\mathbb R^2$ par les
+instructions suivantes :
+```{r}
+set.seed(111)
+library(mlbench)
+n <- 100
+simu <- mlbench.spirals(100, 1, 0.025)  
+plot(simu)
+```
+
+On obtient un jeu de données formé de deux spirales de points emboîtées. L'enjeu est des retrouver les deux groupes. 
+
+1. Pour commencer, appliquer l'algorithme k-means directement sur ces données pour faire
+un clustering en deux groupes. Visualiser le clustering en représentant les points en couleur.
+Commenter le résultat.
+
+2. Calculer les similarités gaussienne $s_{ij}=\exp\{-\|x_i-x_j\|^2/(2\sigma^2)\}$ avec $\sigma=1$. 
+
+    - Appliquer l'algorithme de spectral clustering normalisé sur ce graphe dense pour chercher  deux classes. Analyser le spectre du laplacien normalisé et visualiser le clustering obtenu.
+
+    - Tracer le nuage des nouveaux points sur lesquels $k$-means est appliquée (ce sont les lignes de la matrice T constituée des deux premiers vecteurs propres normalisés) et ajouter en couleur les classes initiales. Interpréter les résultats.
+    
+    - Appliquer l'algorithme d'absolute spectral clustering avec deux classes. Analyser le spectre et visualiser le clustering obtenu.
+
+3. Faites de même pour les graphes de similarité suivants :
+    -  On fixe $\varepsilon=q_{0.75}$  le quantile à 75% des similarités $\{s_{ij}\}_{i<j}$. Construire le graphe de $\varepsilon$-voisinage des points $\{x_i\}$.
+    - On fixe $\varepsilon=q_{0.95}$ le quantile à $95\%$ des similarités $\{s_{ij}\}_{i<j}$. Construire le graphe de $\varepsilon$-voisinage des points $\{x_i\}$. 
+    - On fixe $p=2\lfloor \log(n)\rfloor$. Construire le graphe valué des $p$ plus proches voisins mutuels des points $\{x_i\}$. 
+    - On fixe $p=2$. Construire le graphe valué des $p$ plus proches voisins mutuels des points $\{x_i\}$. 
+    - On fixe $p=2\lfloor \log(n)\rfloor$. Construire le graphe valué des $p$ plus proches voisins simple des points $\{x_i\}$. 
+    - On fixe $p=2$. Construire le graphe valué des $p$ plus proches voisins simple des points $\{x_i\}$. 
+ 
+ 
+ 

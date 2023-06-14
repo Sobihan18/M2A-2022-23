@@ -1,0 +1,331 @@
+---
+title: "Modèles simples et tests d'hypothèses"
+author: "Catherine Matias"
+date: "Février 2023"
+output:
+  html_document:
+    df_print: paged
+---
+ 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("igraph")
+library("ggplot2")
+```
+ 
+Dans ce TP nous allons utiliser des modèles de graphes aléatoires très simples (Erdös-Rényi, modèle de configuration) pour tester des hypothèses sur les graphes. 
+
+
+## 1. Adéquation du modèle d'Erdös-Rényi 
+On commence par se poser la question de savoir si le modèle d'Erdös-Rényi est bien approprié pour décrire des graphes. 
+
+On rappelle que le terme 'modèle d'Erdös-Rényi' recouvre en fait deux versions lègèrement différentes du même principe, à savoir le modèle $G(n,p)$ qui considère l'ensemble des graphes de $n$ noeuds dans lesquels chaque arête apparaît de façon iid selon une loi $B(p)$ et le modèle $G(n,M)$ qui considère l'ensemble des graphes avec $n$ noeuds et $M$ arêtes muni de la loi uniforme.  Ici, on se concentre sur le modèle $G(n,p)$.
+
+
+
+### Modèle $G(n,p)$ 
+ 
+La fonction ``sample_gnp()`` du package ``igraph`` permet de simuler un graphe d'Erdös-Rényi. On donne comme paramètres le nombre $n$  de noeuds et  la probabilité $p$ de connection entre deux noeuds. 
+
+Simulons deux graphes différents : un faiblement connecté, et un très connecté :
+```{r }
+set.seed(1)
+n <- 40
+p1 <- 0.1
+p2 <- 0.7
+G1 <- sample_gnp(n, p1)
+G2 <- sample_gnp(n, p2)
+par(mfrow = c(1, 2))
+plot(G1)
+plot(G2)
+```
+ 
+ 
+### Exercice 1
+
+1. [Sans R] Donner un estimateur $\hat p$ de $p$ dans le modèle $G(n,p)$, et rappeler la distribution marginale du degré $D_i$ du noeud $i$ dans $G(n,p)$.
+
+
+#### Réponse : 
+La densité est estimée par son pendant empirique, à savoir la fréquence des arêtes. Si $|E|$ est le nombre d'arêtes alors pour un graphe non dirigé on a 
+$$\hat p =\frac{|E|}{n(n-1)/2}.$$
+Par ailleurs, la distribution marginale du degré $D_i$ est une loi binomiale $Binom(n-1,p)$.
+
+Dans un graphe dirigé, on estime la densité par 
+$$\hat p_{directed} =\frac{|E|}{n(n-1)}$$
+et chacune des variables aléatoires $D_i^{in},D_i^{out}$ suit également une loi binomiale $Binom(n-1,p)$.  
+2. Simuler des graphes $G(n,p)$ pour différentes valeurs de $n$ et de $p$. Pour chaque graphe simulé, évaluez l'estimateur $\hat p$ et comparez à $p$. De plus, tracez la distribution empirique  des degrés des noeuds  et   superposez la distribution des degrés attendus sous le modèle  $G(n,p)$.   Qu'observez-vous  ?
+
+
+#### Réponse : 
+```{r }
+n <- 100 # modifiez ce paramètre 
+p <- 3/n # modifiez ce rapport - graphe creux - nb d'arêtes moyen en O(n)
+#p <- 0.1 #  graphe assez dense qd n grandit - nb d'arêtes moyen en O(n^2)
+# p <- 5/n^2 # graphe très creux - nb d'arêtes moyen en O(1)
+G <- sample_gnp(n, p)
+hat_p <- 2*ecount(G)/vcount(G)/(vcount(G)-1)
+error <- abs(hat_p-p)
+rel_error <- abs(hat_p-p)/p
+error
+rel_error
+```
+
+On constate que lorsque $n$ (l'ordre du graphe) augmente, l'estimateur $\hat p$ converge vers $p$. Ci-dessus le cadre considéré comme 'le plus réaliste' pourrait être celui d'un nombre d'arêtes en O(n). Quand le graphe devrient extrêmement creux (nb d'arêtes en O(1)), l'erreur relative peut devenir très grande. 
+
+Regardons les distributions des noeuds 
+```{r }
+degree.df <- data.frame(deg=0:max(degree(G)), freq=degree_distribution(G))
+deg_plot <- ggplot(degree.df) + aes(x=deg, y=freq) + geom_bar(stat="identity",color="blue") + ggtitle("Distribution des degrés - graphe Erdös-Rényi") 
+# on superpose la loi theorique Binomiale
+deg_plot + geom_point(aes(y=dbinom(deg, size = vcount(G)-1, prob = p)), colour="red") + labs(subtitle = "Empirique versus Binomiale")
+  
+# avec une approximation Poisson 
+deg_plot+ geom_point(aes(y=dpois(deg, lambda = (vcount(G)-1)*p)), colour="red")+ labs(subtitle = "Empirique versus Poisson")
+```
+
+Les courbes théoriques se superposent bien aux barplots empiriques. On n'observe pas de degrés très élevé. 
+
+
+### Exercice 2
+Reprenez un des graphes  réels analysés lors du dernier TP. 
+Quelle  est la  valeur  estimée  de $p$? Tracez la distribution empirique  des degrés des noeuds  et
+ superposez la distribution des degrés attendus sous le modèle $G(n,p)$. Que  constatez-vous ?
+    
+    
+    
+### Réponse : 
+On commence par le graphe Les Misérables
+
+```{r}
+miserab <- read_graph(file='lesmis.gml', format="gml") 
+n <- vcount(miserab)
+M <- ecount(miserab)
+hat_p <- 2*M/n/(n-1)
+hat_p
+edge_density(miserab)
+```
+On obtient une fréquence d'arêtes estimée à 8,6%
+
+```{r}
+mis.deg.df <- data.frame(degre=0:max(degree(miserab)), f=degree_distribution(miserab))
+mis.deg.plot <- ggplot(mis.deg.df) + aes(x=degre, y=f) + geom_bar(stat="identity",color="blue") + ggtitle("Distribution des degrés - graphe Les Miserables") 
+# on superpose la loi theorique Binomiale - avec \hat p estimé
+mis.deg.plot + geom_point(aes(y=dbinom(degre, size = n-1, prob = hat_p)), colour="red") 
+```
+
+On constate que ça ne capture pas du tout les hubs, ie les quelques noeuds qui ont un degré élevé (La distribution empirique des degrés est à queue lourde). Et ça s'ajuste aussi assez mal sur le début de la distribution. 
+
+
+Regardons ensuite le graphe Friends (rappel : il est dirigé).
+```{r}
+friends <- read.table(file = 'Friendship-network_data_2013.csv')
+G <- graph_from_data_frame(friends, directed = TRUE) 
+n <- vcount(G)
+nb_max_darete <- choose(n, 2) * 2  ## graphe dirigé !!
+hat_p <- ecount(G) / nb_max_darete
+hat_p
+```
+
+Pour la distribution empirique des degrés des noeuds en comparaison avec  la loi binomiale $B(n,\hat p)$ on obtient (autre représentation, cette fois sans ggplot) :
+```{r}
+Min <- max(degree(G, mode = "in"))
+deg.in <- matrix(NA, ncol = Min + 1, nrow = 2)
+deg.in[1,] <- degree.distribution(G, mode = 'in')
+deg.in[2,] <- dbinom(0:Min, n - 1, hat_p)
+
+Mout <- max(degree(G, mode = "out"))
+deg.out <- matrix(NA, ncol = Mout + 1, nrow = 2)
+deg.out[1,] <- degree.distribution(G, mode = 'out')
+deg.out[2,] <- dbinom(0:Mout, n - 1, hat_p)
+
+par(mfrow = c(1, 2))
+barplot(deg.in, beside = TRUE, col = 1:2, names.arg = as.character(0:Min), main = 'Friends - degrés entrants')
+legend(23, .15, c('empirique', 'binomiale'), col = 1:2, lty = 1, cex = .8)
+barplot(deg.out, beside = TRUE, col = 1:2, names.arg = as.character(0:Mout), main = 'Friends - degrés sortants')
+legend(25, .15, c('empirique', 'binomiale'), col = 1:2, lty = 1, cex = .8)
+```
+
+On observe que les distributions empiriques des degrés entrants et sortants atteignent leur maximum bien avant la loi binomiale. Par ailleurs, le graphe réel contient plus de degrés élevés que la loi théorique associée à  $G(n,p)$. Il est alors peu probable que le graphe observé soit la réalisation d'un modèle $G(n,p)$.
+
+   
+## 2. Modèles de configuration 
+Cette fois on considère la famille des modèles de configuration. 
+
+### Exercice 3
+ On commence par ajuster une loi de puissance sur le graphe utilisé à l'exercice précédent. Utilisez pour cela la fonction 'fit_power_law' (commencez par lire l'aide pour comprendre son fonctionnement). Puis représentez la distribution empirique des degrés et superposez la loi de puissance avec le paramètre estimé. Attention à la constante de normalisation !
+ 
+### Réponse : 
+La fonction ajuste une loi de puissance sur la distribution des degrés empiriques. Mais attention car la loi de puissance n'est pas définie en 0, donc si vous avez des noeuds isolés il faut penser à les enlever !
+```{r}
+#help("fit_power_law")
+adjust <- fit_power_law(degree(miserab))
+adjust
+```
+
+
+L'estimateur de l'exposant de la loi de puissance est $\alpha=4.1$. Représentons les distributions empiriques et estimées des degrés. Là encore, il faut faire attention à ne pas commencer en 0 sinon la loi de puissance explose et on ne voit rien. 
+
+```{r}
+mis.deg.no0.df <- data.frame(degre=1:max(degree(miserab)), f=degree_distribution(miserab)[-1])
+mis.deg.plot <- ggplot(mis.deg.no0.df) + aes(x=degre, y=f) + geom_bar(stat="identity",color="blue") + ggtitle("Distribution des degrés - graphe Les Miserables") 
+# On écrit une fonction qui donne la densité de la loi de puissance sur 1:(n-1). 
+power.dens <- function(x, alpha,n){
+  norm <- 1/sum((1:(n-1))^(-alpha)) # constante de normalisation pour que la somme vaille 1
+  return(norm*x^(-alpha))
+}
+# on superpose la loi theorique puissance - avec alpha estimé
+mis.deg.plot +geom_point(aes(y=power.dens(degre, alpha = adjust$alpha, n=vcount(miserab))), colour="red")
+```
+
+
+Sur ce jeu de données, la distribution des degrés ne suit pas du tout une loi de puissance. 
+
+
+### Exercice 4 
+On considère le modèle random-degree $RD(\underline{d})$ où $\underline{d}$ est la suite des degrés du graphe observé. Comparez la valeur observée du degré $d_i$ et la valeur moyenne $\mathbb{E}(D_i)$ sous le modèle  $RD(\underline{d})$ (pour différents choix de la constante multiplicative). 
+
+### Réponse : 
+Dans la loi $RD(\underline d)$, chaque entrée $A_{ij}$ de la matrice d'adjacence suit une loi $B(p_{ij})$ avec $p_{ij}=d_id_j/C$ pour un certain choix $C$ de constante, qui sert à faire en sorte que tous les $p_{ij}\leq 1$.
+De plus, l'espérance $\mathbb{E}(D_i)$ vaut $d_i(2|E|-d_i)/C$.
+
+
+On commence par choisir $C=\max(d_id_j)$.
+```{r}
+# On utilise outer pour calculer les produits croisés d_id_j
+d.seq <- degree(miserab)
+p.ij <- outer(d.seq,d.seq)
+# Choix de C 
+C <- max(p.ij)
+esp.d.seq <- d.seq*(2*M-d.seq)/C 
+plot.df <- data.frame(d.seq=d.seq,esp.d.seq=esp.d.seq)
+ggplot(data=plot.df)+ aes(x=d.seq,y=esp.d.seq) + geom_point(col="blue") + geom_abline(intercept = 0, slope = 1, color="red") +labs(x="degrés observés", y="degrés moyens sous le modèle RD")
+```
+
+Avec ce choix de normalisation, ça ne s'ajuste pas. On essaye $C=2|E|$.
+
+
+```{r}
+# Choix de C 
+C<- 2*M
+esp.d.seq <- d.seq*(2*M-d.seq)/C 
+plot.df <- data.frame(d.seq=d.seq,esp.d.seq=esp.d.seq)
+ggplot(data=plot.df)+ aes(x=d.seq,y=esp.d.seq) + geom_point(col="blue") + geom_abline(intercept = 0, slope = 1, color="red")  +labs(x="degrés observés", y="degrés moyens sous le modèle RD")
+```
+
+Cette fois c'est beaucoup ieux : on voit que les degrés observés et attendus en moyenne sous le modèle coïncident presque.
+
+
+## 3. Tests 
+On va se servir des modèles de configuration pour mettre en oeuvre des tests simples sur les statistiques d'un graphe.  
+
+### Exercice 4 
+1. Ecrivez deux fonctions de simulation de graphes sous le modèle à degrés fixés $FD(\underline d)$ avec les algorithmes de matching et de re-branchement. 
+2. Reprenez un de vos exemples réels : utilisez les deux fonctions pour générer des graphes qui ont la même suite de  degrés que votre graphe réel. On pourra comparer le nombre de triangles dans les deux graphes, ou toute autre statistique de votre choix. Commentez.
+3. On veut tester si  le nombre d'occurrences du triangle dans le graphe observé est significativement trop grand ou trop petit par rapport à la valeur attendue sous le modèle nul $FD(\underline d)$. On utilise pour cela  des simulations de  Monte-Carlo. Plus précisément, on génère un grand nombre  de graphes ayant  la même suite de degrés et on compte le nombre de triangles pour  chacun d'eux.  Pour générer ces graphes, est-il raisonnable d'utiliser   les algorithmes de  matching et de re-branchement que vous avez codé ? Si non utilisez
+directement le package ``igraph``. 
+Tracez un histogramme de cette distribution. Que pensez-vous de la valeur observée dans votre graphe réel?
+
+
+### Réponse : 
+
+```{r}
+# Algorithme de matching
+match.gen <- function(d){
+	# Initialisation
+	n <- length(d)
+	l <- sum(d)
+	Edge.List <- list()
+	Fake.Nodes <- c()
+	loop.test <- T
+	multi.test <- T
+	
+	# Creation de la liste des noeuds etendue
+	for (i in 1:n){
+		Fake.Nodes <- c(Fake.Nodes,rep(i,d[i]))
+		}
+	
+	# a faire tant qu'on a pas obtenu un graphe
+	while (max(loop.test==T, multi.test==T)==1){
+		# On tire des aretes
+		ind <- 0
+		while (l >= 1){
+			ind <- ind+1
+			u <- sample(1:l,2)
+			u <- sort(u)		# pratique d'ordonner les indices pour la suite
+			if (Fake.Nodes[u[1]]==Fake.Nodes[u[2]]) {  # est-ce une boucle ?
+				loop.test <- T
+				break 				
+				}
+			else {
+				loop.test <- F 
+				Edge.List[[ind]] <- Fake.Nodes[u] 
+				Fake.Nodes <- Fake.Nodes[-u]
+				l <- l-2
+				}
+			}
+	
+		# Test des aretes doubles
+		# Attention fonctionne avec des aretes ordonnées !
+		multi.test <- as.logical(1-( length(unique(Edge.List)) == ind ))
+	}
+		
+	return(Edge.List)
+}
+
+# test de la fonction match.gen
+# d <- c(4,2,3,1,0,1,1)
+# is_degseq(d) # verifions que c'est bien une suite de degrés
+# try1 <- match.gen(d) # ca plante souvent !!!
+# d<-c(1,1,1,1)
+# is_degseq(d)
+# try2 <- match.gen(d) # ca plante souvent !!!
+# # sur des données réelles
+# d <- degree(miserab)
+# is_degseq(d)
+# try3 <- match.gen(d)
+
+
+# Algorithme de rewiring
+# uniquement pour des graphes non orientés ici !
+# Edge.List est un tableau avec nb de lignes= nb d'arêtes et 2 colonnes
+rewire.gen<-function(Edge.List,Nb.iter=100*(dim(Edge.List)[1])){
+	l <- dim(Edge.List)[1]
+	Edge.List <- t(apply(Edge.List,1,sort))
+	for (i in 1:Nb.iter){
+		u <- sample(1:l,2)
+		old1 <- Edge.List[u[1],]
+		old2 <- Edge.List[u[2],]
+		new1 <- sort(c(old1[1],old2[2]))	
+		new2 <- sort(c(old1[2],old2[1]))		
+		# On vérifie qu'il y a 4 noeuds différents (sinon soit on cree une boucle, soit on ne fait rien, et que les nouvelles aretes n'existent pas deja)
+		if ((length(unique(c(old1,old2)))==4) && (length(unique(rbind(Edge.List[-c(u[1],u[2]),], new1, new2)))==l )){ 
+			Edge.List[u[1],] <- new1
+			Edge.List[u[2],] <- new2
+			}	
+		}
+	return(Edge.List)
+}
+
+# test
+# test<- as.matrix(friends)
+# rewire.gen(test)
+# retry<- rewire.gen(try1)
+```
+
+
+Les fonctions qu'on a écrites ne sont pas optimisées, il est préférable d'utiliser la fonction 'sample_degseq' de igraph. Attention aux potions de cette fonction, par défaut, elle crée des graphes avec potentiellement des boucles et des arêtes multiples. La méthode la plus efficace est 'vl' (algorithme de Viger et Latapy).
+```{r}
+deg.seq<- degree(miserab)
+#help("sample_degseq")
+R <- 100 # réplicats Monte Carlo
+T <- rep(NA,R)
+for (i in 1:R){
+  G <- sample_degseq(deg.seq, method="vl")
+  T[i]<- sum(count_triangles(G))/3
+}
+ggplot(data.frame(count=T))+ aes(count)+geom_histogram() +geom_vline(xintercept=sum(count_triangles(miserab))/3,col="red")
+```
+
+
+Ici le nombre de triangles qu'on observe ne s'explique pas du tout avec la loi $FD$ sur les degrés !

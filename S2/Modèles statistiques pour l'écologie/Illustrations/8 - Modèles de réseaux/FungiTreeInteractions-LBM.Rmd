@@ -1,0 +1,74 @@
+---
+title: "Modelling tree-fungi interactions with a LBM"
+author: S. Robin
+date: feb 2022
+output: html_document
+# output: pdf_document
+# geometry: margin=1.5cm
+# classoption: a4paper
+---
+
+# Data
+
+* $n = 145$ fungal species, $p = 51$ tree species.
+
+```{r treeSpecies, echo=FALSE}
+load('FungiTreeInteractions.Rdata')
+head(fungiSpecies); n <- nrow(fungiSpecies)
+head(treeSpecies); p <- nrow(treeSpecies)
+```
+
+* Interaction variable: $Y_{ij} = 1$  ($1 \leq i \leq n, 1 \leq j \leq p$) if fungal $i$ is aparasite of tree $j$, and 0 otherwise.
+
+```{r data, echo=FALSE}
+image(1:n, 1:p, fungiTreeInteractions, xlab='fungi', ylab='tree', main='Interaction matrix')
+```
+
+# Latent blockmodel (LBM)
+
+Assuming $K, L$ clusters, 
+\begin{align*}
+  \{U_i\}_{1 \leq i \leq n} & \text{ iid} & 
+  U_i & \sim \mathcal{M}{(1, \pi)} \\
+  \{V_i\}_{1 \leq j \leq p} & \text{ iid} & 
+  V_j & \sim \mathcal{M}{(1, \rho)} \\
+  \{Y_{ij}\}_{1 \leq i, j \leq n} & \text{ indep.} \mid U, V & 
+  (y_{ij} \mid U_i=k, V_j = \ell) & \sim \mathcal{B}{(\gamma_{k\ell})} \\
+\end{align*}
+
+##### Choosing the number of clusters 
+
+```{r lbmSelect, echo=FALSE}
+library(blockmodels)
+# LBM <- BM_bernoulli(membership_type='LBM', adj=fungiTreeInteractions, plotting='', verbosity=0)
+# LBM$estimate()
+# save(LBM, file='FungiTreeLBM.Rdata')
+load('FungiTreeLBM.Rdata')
+plot(LBM$ICL, type='b', pch=20, xlab='K + L', ylab='ICL')
+KL <- which.max(LBM$ICL)
+abline(v=KL, col=2, lwd=2)
+```
+
+##### Parameter estimates
+
+```{r lbmParms, echo=FALSE}
+tau <- LBM$memberships[[KL]]$Z1; K <- ncol(tau)
+eta <- LBM$memberships[[KL]]$Z2; L <- ncol(eta)
+cat('K =', K, ', L =', L, '\n')
+cat('pi = \n')
+print(colMeans(tau))
+cat('rho = \n')
+print(colMeans(eta))
+cat('gamma = \n')
+print(LBM$model_parameters[[KL]]$pi)
+```
+
+##### Content of the clusters
+
+```{r lbmClassif, echo=FALSE}
+rankTau <- tau%*%(1:K); fungiClusterLBM <- apply(tau, 1, which.max); nk <- table(fungiClusterLBM)
+rankEta <- eta%*%(1:L); treeClusterLBM <- apply(eta, 1, which.max); pl <- table(treeClusterLBM)
+image(1:n, 1:p, fungiTreeInteractions[order(rankTau), order(rankEta)], 
+      xlab='fungi', ylab='tree', main='Interaction matrix')
+abline(v=.5+cumsum(nk)[-K], h=.5+cumsum(pl)[-L], col=4)
+```

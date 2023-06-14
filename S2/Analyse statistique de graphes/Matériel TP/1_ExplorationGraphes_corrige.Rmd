@@ -1,0 +1,185 @@
+---
+title: "Exploration de graphes - Éléments de correction"
+author: "Tabea Rebafka & Catherine Matias"
+date: "Janvier 2023"
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(igraph)
+library("ggplot2")
+```
+# Graphe Les misérables 
+
+```{r}
+friends <- read.table(file='Friendship-network_data_2013.csv')
+G <- graph_from_data_frame(friends, directed=TRUE) 
+V(G)
+E(G)
+is.directed(G)
+```
+On a un graphe de 134 noeuds et 668 arêtes, dirigées. Les noeuds ont des attributs qui sont des noms :
+```{r}
+vertex_attr(G)
+```
+
+Affichons la suite des degrés entrants du graphe 
+```{r}
+degree(G,mode="in")
+```
+Vous remarquez que chaque noeud apparaît avec son nom et son degré. On peut tracer un barplot de cette distribution
+```{r}
+par(mfrow=c(1,2))
+barplot(degree_distribution(G,mode="in"),main="Distribution des degrés entrants")
+barplot(degree_distribution(G,mode="out"),main="Distribution des degrés sortants")
+```
+
+Notez que par défaut on n'a pas les abscisses. Il faut savoir que ``degree_distribution`` commence par lister les noeuds de degré 0 (isolés). À la main : 
+```{r}
+par(mfrow=c(1,2))
+barplot(degree_distribution(G,mode="in"),names.arg=as.character(0:max(degree(G,mode="in"))), main="Distribution des degrés entrants")
+barplot(degree_distribution(G,mode="out"),names.arg=as.character(0:max(degree(G,mode="out"))), main="Distribution des degrés sortants")
+```
+
+Ou encore à la main (en comptages plutôt qu'en fréquences ; et les comptages nuls sont ignorés)
+```{r}
+barplot(table(degree(G,mode="in")))
+```
+
+
+Si on veut faire bien plus élégant, avec ggplot :  
+```{r}
+degree.df <- data.frame(deg=0:max(degree(G,mode="out")), freq=degree_distribution(G,mode="out"))
+p <- ggplot(degree.df, aes(x=deg, y=freq)) + geom_bar(stat="identity",color="blue")
+p + ggtitle("Distribution des degrés sortants")
+```
+
+Étudions les composantes connexes de G : 
+
+```{r}
+plot(G)
+components(G)                      
+```
+
+Ce graphe a 3 composantes connexes (cc), de tailles respectives 128, 3 et 3. La seconde composante connexe contient les noeuds "124", "471" et "970". La densité et le diamètre du graphe sont 
+
+
+```{r}
+edge_density(G)
+diameter(G, directed=TRUE, unconnected=FALSE)
+diameter(G, directed=TRUE, unconnected=TRUE)
+```
+
+La densité du graphe est d'environ 3.7%
+Le diamètre, calculé sur l'ensemble du graphe, est infini (puisqu'il y a plusiseurs cc). Avec l'option ``unconnected=TRUE`` on obtient la valeur maximale du diamètre calculé sur chaque composante. Pour voir le  plus long chemin (dirigé) dans le graphe (ou l'un des plus longs si y'en a plusieurs) : 
+
+```{r}
+get_diameter(G, directed=TRUE)
+```
+
+On peut calculer, en chaque noeud du graphe, le nombre de triangles (non dirigés) auquel il appartient 
+
+```{r}
+count_triangles(G)
+```
+Le coefficient de clustering est défini localement comme la fréquence de connexion entre les voisins d'un noeud. 
+
+```{r}
+transitivity(G,type="local") # Clustering coefficient
+```
+Il y a des valeurs NaN pour les noeuds qui n'ont pas au moins deux voisins.
+```{r}
+for (v in V(G)[is.nan(transitivity(G,type="local"))]){
+  print(paste0("Le noeud ",v, " a pour degré ", degree(G,mode="total")[v], " et intervient dans ",count_triangles(G)[v] , " triangles"))
+}
+```
+Curieusement, il y a 3 noeuds qui ont un degré 2 et un coefficient de clustering NaN. Comprenez-vous pourquoi ? Indice : Regardez quelles arêtes incluent un noeud en particulier
+```{r}
+neighbors(G, 32, mode='all')
+E(G)[.inc(32)]
+```
+
+Le coefficient de clustering est la moyenne du coeff local 
+```{r}
+mean(transitivity(G,type="local"),na.rm=TRUE)
+```
+
+Et le coefficient de transitivité (par défaut, ``type="global"``)
+
+```{r}
+transitivity(G)
+```
+
+On peut voir les voisins d'un noeud en particulier 
+```{r}
+neighbors(G, 4,  mode='out')
+neighbors(G, 4, mode='in')
+neighbors(G, 4, mode='all')
+```
+
+
+En calculant les cliques de taille 3, on retrouve qu'il y a 451 triangles dans G : 
+```{r}
+K3 <- cliques(G, min=3, max=3)
+K3[[1]] 
+length(K3) 
+sum(count_triangles(G))/3
+```
+Les notions de centralité n'ont de sens que pour des graphes connexes. On se concentre donc sur la plus grande composante connexe du graphe (pour mémoire, c'était la numéro 1, de taille 128).
+
+```{r}
+G1 <- induced_subgraph(G,V(G)[components(G)$membership==1])
+V(G1)
+```
+
+On calcule la closeness centrality. Attention comme le graphe est dirigé la prise en compte (ou pas) de la direction change le résultat. 
+
+```{r}
+closeness(G1,mode="total") 
+closeness(G1)
+```
+
+
+Pour la centralité betweenness 
+```{r}
+betweenness(G1)
+plot(G, vertex.size=betweenness(G))
+```
+
+
+Pour compter des motifs, on peut utiliser ``count_subgraph_isomorphisms``. Ici on va d'abord retirer les directions (mais on peut chercher un motif dirigé aussi)
+
+```{r}
+Two.star <- make_star(3,mode="undirected")
+Three.star <- make_star(4,mode="undirected")
+plot(Two.star)
+plot(Three.star)
+G_undirected <- as.undirected(G)
+count_subgraph_isomorphisms(Two.star,G_undirected)
+count_subgraph_isomorphisms(Three.star,G_undirected)
+
+# avec un motif dirigé 
+Two.stard <- make_star(3)
+count_subgraph_isomorphisms(Two.stard,G)
+```
+
+Enfin, pour compter tous les petits motifs jusqu'à un nombre de noeuds fixé `size' (par défaut c'est 3) on peut utiliser
+```{r}
+motifs(G_undirected)
+```
+
+Il existe 4 motifs non dirigés différents sur 3 noeuds : 
+  - le motif vide d'ordre 3 
+  - une seule arête sur 3 noeuds 
+  - le motif  "V" ie le motif 'Two.star' ci-dessus
+  - le triangle. 
+
+Quand on calcule la fonction 'motifs' sur un graphe (et 'size'=3 par défaut), on obtient donc 4 valeurs. Les deux premières valeurs (qui correspondent au motif vide d'ordre 3 et à une seule arête sur 3 noeuds respectivement) valent NA. C'est parce que si le motif n'est pas connexe, alors la réponse de cette fonction est NA. 
+
+
+Ensuite, la fonction compte le nombre de motifs induits "V" (ie le motif 'Two.star' ci-dessus). Attention, ça n'est pas le nombre de triplets connectés, parce qu'un triangle ne compte pas comme une 'Two.star' (il y a une arête de trop). Enfin, la dernière valeur est le nb de triangles. 

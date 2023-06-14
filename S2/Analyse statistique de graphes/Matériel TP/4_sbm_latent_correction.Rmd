@@ -1,0 +1,564 @@
+---
+title: "Correction TP SBM et modèles latents"
+author: "Catherine Matias"
+date: "23/03/2023"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Exercice 1. Simulation d'un SBM
+ 
+
+1.  
+```{r}
+rsbm <- function(n, pi, gamma){
+  Q <- length(pi)
+  Z <- sample(1:Q, n, replace=TRUE, prob=pi) # variables latentes 
+  # adjacency matrix 
+  A <- matrix(0, n, n)
+  for (i in 1:(n-1)){
+      A[i, (i+1):n] <- A[(i+1):n, i] <- rbinom(n-i, 1, gamma[Z[i], Z[(i+1):n]])
+  }  
+  return(list(adj=A, Z=Z))
+}
+```
+
+2.  
+On définit les paramètres :
+```{r}
+n <- 15 # number of nodes
+Q <- 2 # number of clusters
+pi <- rep(1/Q, Q) # groups proportions  
+# here we choose a graph with community structure
+gamma <- matrix(c(0.8, 0.1,
+                  0.1, 0.6), nrow=Q) # matrix of connectivities per groups pairs
+```
+Et on simule un graphe sous ce modèle :
+```{r, message=FALSE}
+SBMcomm <- rsbm(n, pi, gamma)
+library(igraph)
+G <- graph_from_adjacency_matrix(SBMcomm$adj, mode="undirected")
+plot(G, vertex.color = SBMcomm$Z)
+```
+
+On voit qu'il s'agit d'un graphe avec deux communautés, ce qui est dû aux fortes probabilités de connectivité sur la diagonale de **gamma** et aux faibles valeurs de connectivité en dehors la diagonale.
+
+
+3.  On définit les paramètres:
+
+```{r, echo=FALSE}
+set.seed(21)
+```
+
+```{r}
+Q <- 5 # number of groups
+pi <- (1:5)/sum(1:5) # group proportions  
+pi
+gamma <- diag(seq(.9,.5, by=-.1))
+gamma[matrix(c(1:4, 2:5) , ncol=2)] <- gamma[matrix(c(2:5, 1:4) , ncol=2)] <- seq(.9,.6, by=-.1)
+gamma                  
+```
+
+```{r}
+n <- 50 # number of nodes
+SBM_2 <- rsbm(n, pi, gamma)
+G <- graph_from_adjacency_matrix(SBM_2$adj, mode="undirected")
+plot(G, vertex.color = SBM_2$Z)
+```
+
+Il y a beaucoup de noeuds, donc ce n'est pas très lisible. Néanmoins on reconnait des groupes de noeuds très connectés entre eux, mais aussi avec des fortes connexions aux groupes voisins. Le méta-graphe de la matrice de connectivité **gamma** est plus lisible, car il contient moins de noeuds :
+
+```{r}
+Gmeta <- graph_from_adjacency_matrix(gamma, mode="undirected", weighted=TRUE)
+poids  <- gamma[lower.tri(gamma, diag=TRUE)]
+poids <- poids[poids>0]
+plot(Gmeta, vertex.color=1:Q,  edge.width=poids*10, vertex.size=200*pi, vertex.label.cex=1.5)
+```
+
+Le poids d'arête représente la probabilité de connexion $\gamma_{q,l}$, la taille d'un  noeud représente la proportion du groupe $\pi_q$.
+
+
+Prenons comme dernier exemple un modèle d'affiliation :
+```{r, echo=FALSE}
+set.seed(17)
+```
+```{r}
+Q <- 6 # number of clusters
+pi <- rep(1:2, 3)/sum(rep(1:2, 3)) # groups proportions  
+pi
+gamma <- matrix(.1, Q, Q)
+diag(gamma) <- 0
+gamma                  
+```
+
+On simule un graphe
+```{r}
+n <- 100 # number of nodes
+SBMaffil <- rsbm(n, pi, gamma)
+G <- graph_from_adjacency_matrix(SBMaffil$adj, mode="undirected")
+plot(G, vertex.color=SBMaffil$Z)
+```
+
+On ne voit rien du tout. En revanche, le métagraphe de **gamma** est plus informatif :
+```{r}
+Gmeta <- graph_from_adjacency_matrix(gamma, mode="undirected", weighted=TRUE)
+poids  <- gamma[lower.tri(gamma, diag=TRUE)]
+poids <- poids[poids>0]
+plot(Gmeta, vertex.color=1:Q,  edge.width=poids*10, vertex.size=200*pi, vertex.label.cex=1.5)
+```
+
+On voit bien l'absence de l'intracommunication des groupes (absence de boucles), et que l'intensité de la communication inter-groupe est la même pour toutes les paires de groupes.
+
+
+ 
+ 
+## Exercice 2. 
+
+1. Prenons  le graphe `SBM_2` de l'exercice précédent.
+
+```{r}
+library(sbm)
+plotMyMatrix(SBM_2$adj)
+```
+
+On ajuste le modèle SBM :
+```{r}
+mySBM_2 <- estimateSimpleSBM(SBM_2$adj, 
+                                 "bernoulli", 
+                                 estimOptions = list(verbosity = 0, plot = FALSE))
+mySBM_2
+```
+
+L'ICL choisit le bon nombre  de groupes ($Q=5$) :
+```{r}
+mySBM_2$nbBlocks
+```
+
+```{r}
+library(ggplot2)
+mySBM_2$storedModels %>% 
+  ggplot() + 
+    aes(x = nbBlocks, y = ICL) + 
+    geom_line() + 
+    geom_point(alpha = 0.5)
+```
+
+La courbe ICL est bien courbée (sans plateau), donc il n'y a pas d'ambiguité sur le nombre de blocs.
+
+
+Après avoir réordonné les noeuds en fonction du clustering, la matrice d'adjacene est bien structurée par blocs :
+```{r}
+plot(mySBM_2, type = "data")
+```
+
+
+
+Comparons le clustering trouvé  avec le vrai clustering (variables latentes) :
+```{r}
+clustSBM2 <- mySBM_2$memberships
+table(clustSBM2, SBM_2$Z)
+```
+
+C'est une matrice de permutation : le clustering est parfait (identique aux variables latentes à permutation près des labels).
+
+
+Pour les paramètres estimés, on a :
+```{r}
+# les proportions de groupe :
+hat.pi <- coef(mySBM_2, 'block')
+hat.pi 
+pi # vrai paramètre 
+# les paramètres de connectivité
+hat.gamma <- coef(mySBM_2, 'connectivity')
+hat.gamma 
+
+# On arrondi pour plus de lisibilité :
+hat.gamma <- round(coef(mySBM_2, 'connectivity')$mean, digits=1)
+hat.gamma
+# et on reprend la vraie valeur du paramètre  
+gamma <- diag(seq(.9,.5, by=-.1))
+gamma[matrix(c(1:4, 2:5) , ncol=2)] <- gamma[matrix(c(2:5, 1:4) , ncol=2)] <- seq(.9,.6, by=-.1)
+gamma  
+```
+
+Les estimations sont difficiles à comparer aux vraies valeurs des paramètres à cause des permutations des groupes. Il faudrait réordonner les groupes. Ici c'est facile à faire parce que la table de contingence était déjà une matrice de permutation :  
+
+```{r}
+permut <- unname(as.matrix(table(clustSBM2, SBM_2$Z))) 
+permut <- permut >0
+# estimateur permuté : 
+t(permut) %*% hat.gamma  %*% permut
+gamma
+```
+
+On voit que les estimations sont assez proches.
+
+
+
+
+2. Considérons le modèle à blocs stochastiques avec paramètres suivants :  $Q=4$ groupes, $\boldsymbol\pi=(1/4,1/4,1/4,1/4)$ et 
+$$\boldsymbol \gamma=\left(\begin{array}{llll}
+0.2& 0.7&0.1&0.5\\
+0.7&0.7&0.1&0.5\\
+0.1&0.1&0.9&0.5\\
+0.5&0.5&0.5&0.1
+\end{array}\right).$$ 
+Générer un graphe à $n=20$ noeuds et ajuster un SBM sur les données. Qu'observez-vous? Que se passe-t-il quand on augmente le nombre de noeuds?
+
+
+Définissons les paramètres du SBM :
+```{r, echo=FALSE}
+set.seed(45)
+```
+```{r}
+Q <- 4
+pi <- rep(1/Q, Q)
+gamma <- matrix(c(.2, .7, .1, .5, .7, .7, .1, .5, .1, .1, .9, .5, .5, .5, .5, .1), Q, Q)
+gamma
+```
+
+et simulons un graphe à 20 noeuds :
+```{r}
+n <- 20
+thisSBM20 <- rsbm(n, pi, gamma)
+plotMyMatrix(thisSBM20$adj)
+```
+
+Ajustons le modèle et inspectons la courbe ICL :
+```{r}
+myThisSBM <- estimateSimpleSBM(thisSBM20$adj, 
+                                 "bernoulli", 
+                                 estimOptions = list(verbosity = 0, plot = FALSE))
+myThisSBM$storedModels %>% 
+  ggplot() + 
+    aes(x = nbBlocks, y = ICL) + 
+    geom_line() + 
+    geom_point(alpha = 0.5)
+myThisSBM$nbBlocks
+```
+On ne trouve que deux groupes.
+
+On peut comparer le clustering avec la vérité
+```{r}
+table(myThisSBM$memberships, thisSBM20$Z)
+```
+Seulement un groupe est identifié correctement. Les trois autres sont confondus en un seul groupe. 
+
+La matrice d'adjacence réordonnée est structurée par blocs :
+```{r}
+plot(myThisSBM, type = 'data')
+```
+
+La sous-estimation de la complexité du modèle est sûrement due au faible nombre d'observations. Estimer 4 groupes avec seulement 20 noeuds est un problème trop difficile (moyenne de 5 noeuds par groupe !). 
+
+
+Simulons un graphe à 50 noeuds et les mêmes paramètres :
+```{r, echo=FALSE}
+set.seed(455)
+```
+```{r}
+n <- 50
+thisSBM50 <- rsbm(n, pi, gamma)
+myThisSBM <- estimateSimpleSBM(thisSBM50$adj, 
+                                 "bernoulli", 
+                                 estimOptions = list(verbosity = 0, plot = FALSE))
+myThisSBM$storedModels %>% 
+  ggplot() + 
+    aes(x = nbBlocks, y = ICL) + 
+    geom_line() + 
+    geom_point(alpha = 0.5)
+myThisSBM$nbBlocks
+```
+On fait mieux : déjà trois groupes.
+
+La comparaison du clustering à la vérité donne :
+```{r}
+table(myThisSBM$memberships, thisSBM50$Z)
+```
+Deux groupes sont identifiés correctement.
+
+```{r}
+plot(myThisSBM, type = 'data')
+```
+
+Passons à un graphe à 80 noeuds :
+```{r, echo=FALSE}
+set.seed(405)
+```
+```{r}
+n <- 80
+thisSBM80 <- rsbm(n, pi, gamma)
+myThisSBM <- estimateSimpleSBM(thisSBM80$adj, 
+                                 "bernoulli", 
+                                 estimOptions = list(verbosity = 0, plot = FALSE))
+myThisSBM$storedModels %>% 
+  ggplot() + 
+    aes(x = nbBlocks, y = ICL) + 
+    geom_line() + 
+    geom_point(alpha = 0.5)
+myThisSBM$nbBlocks
+```
+Maintenant le nombre de groupes trouvé est bon !
+
+
+Et le clustering est parfait :
+```{r}
+table(myThisSBM$memberships, thisSBM80$Z)
+```
+```{r}
+plot(myThisSBM, type = 'data')
+```
+
+
+Que se passe-t-il quand on augmente davantage le nombre de noeuds ? Est-ce qu'ICL va choisir un modèle avec  encore plus de groupes ? Essayons avec un graphe à 200 noeuds :
+```{r, echo=FALSE}
+set.seed(10)
+```
+```{r}
+n <- 200
+thisSBM200 <- rsbm(n, pi, gamma)
+myThisSBM <- estimateSimpleSBM(thisSBM200$adj, 
+                                 "bernoulli", 
+                                 estimOptions = list(verbosity = 0, plot = FALSE))
+myThisSBM$storedModels %>% 
+  ggplot() + 
+    aes(x = nbBlocks, y = ICL) + 
+    geom_line() + 
+    geom_point(alpha = 0.5)
+myThisSBM$nbBlocks
+```
+On choisit toujours le bon nombre de groupes. On dirait que la pénalité du critère ICL est appropriée, il n'y a pas de sur-apprentissage.
+
+Le clustering est toujours parfait :
+```{r}
+table(myThisSBM$memberships, thisSBM200$Z)
+```
+```{r}
+plot(myThisSBM, type = 'data')
+```
+ 
+3.   Appliquer le  spectral clustering normalisé  et le 
+  spectral clustering avec $L_{\text{abs}}$ aux graphes de la question précédente. Retrouve-t-on les bons
+  groupes ?
+  
+  
+  On reprend nos fonctions de spectral clustering :
+```{r}
+normalize <- function(x){
+  return(x/sqrt(sum(x^2))) 
+}
+
+spec.clust.norm <- function(A, K){
+  n <- nrow(A)
+  D_moins1_2 <- diag(1/sqrt(rowSums(A))) 
+  LN <- diag(n) - D_moins1_2 %*% A %*%D_moins1_2
+  specN <- eigen(LN)
+  plot(1:n,
+       specN$values[n:1],  
+       main="Valeurs propres de L_N", 
+       ylab='valeurs propres',
+       xlab='indices')  
+  U <- specN$vectors[,n:(n-K+1)]
+  V <- t(apply(U, 1, normalize)) 
+  clustering <- kmeans(V, K, nstart=100)$cluster
+  return(clustering)
+}
+
+spec.clust.abs <- function(A, K){
+  n <- nrow(A)
+  D_moins1_2 <- diag(1/sqrt(rowSums(A))) 
+  Labs <- D_moins1_2 %*% A %*%D_moins1_2
+  specabs <- eigen(Labs)
+  plot(1:n,
+       abs(specabs$values),  
+       main="Valeur absolue des valeurs propres de L_abs",
+       ylab='valeurs propres',
+       xlab='indices')  
+  index <- order(abs(specabs$values),decreasing = FALSE)[(n-K+1):n]
+  U <- specabs$vectors[,index]
+  clustering <- kmeans(U,K,nstart=100)$cluster
+  return(clustering)
+}
+```  
+
+
+Sur le graphe à 80 noeuds :
+```{r}
+resSC <- spec.clust.norm(thisSBM80$adj, 4)
+table(resSC, thisSBM80$Z)
+```
+Le spectral clustering  normalisé ne marche pas. Il n'identifie qu'un seul groupe.
+
+
+```{r}
+resSCabs <- spec.clust.abs(thisSBM80$adj, 4)
+table(resSCabs, thisSBM80$Z)
+```
+Le spectral clustering $L_{\text{abs}}$ marche un peu  mieux.
+
+
+Essayons sur le très grand graphe à 200 noeuds  :
+```{r}
+resSC <- spec.clust.norm(thisSBM200$adj, 4)
+table(resSC, thisSBM200$Z)
+```
+
+Le spectral clustering normalisé ne marche toujours pas, mais c'est normal, car le graphe ici n'est pas organisé en communautés.
+
+
+Quant à l'absolute spectral clustering, il fonctionne parfaitement sur le graphe à 200 noeuds :
+```{r}
+resSCabs <- spec.clust.abs(thisSBM200$adj, 4)
+table(resSCabs, thisSBM200$Z)
+```
+ 
+ 
+ 
+## Exercice 4. Latent position model 
+
+```{r, echo=FALSE}
+set.seed(47)
+```
+
+
+
+On charge le package et les données:
+```{r, message = FALSE, warning = FALSE}
+# install.packages("latentnet")
+library("latentnet")
+data(sampson)
+```
+
+### Question 1
+Le résultat de :
+```{r}
+help(samplike)
+```
+ne s'affiche pas dans un notebook. Il faut taper la commande dans la console de RStudio pour accéder à la documentation du jeu de données.
+
+```{r}
+summary(samplike)
+```
+On voit que le graphe est dirigé. Il y a 18 noeuds et 88 arêtes. La densité du graphe  est  $0.288$.
+
+Afin de calculer les degrés des noeuds, on extrait d'abord la matrice d'adjacence
+```{r}
+A <- as.matrix(samplike)
+degrees <- rowSums(A)
+degrees
+```
+
+On fait un plot du graph :
+```{r}
+plot.network(samplike, vertex.cex = 3)
+```
+
+ou plus simplement : 
+```{r}
+plot(samplike, vertex.cex = 3)
+```
+
+### Question 2
+
+On extrait les prénoms de la liste \texttt{\val}: 
+```{r}
+noms <- sapply(samplike$val, function(x) x$vertex.names)
+noms
+```
+On rajoute les prénoms sur le graphe :
+```{r}
+plot(samplike, vertex.cex = 3, label = noms)
+```
+
+On extrait l'appartenance de groupe de tous les moines :
+```{r}
+gr <- sapply(samplike$val, function(x) x$group)
+gr
+```
+
+On les rajoute au graphe par des couleurs différentes :
+```{r}
+gr <- as.factor(gr)
+plot(samplike, vertex.col = gr, vertex.cex = 3, label = noms)
+```
+
+On observe que les groupes \texttt{Outcasts} \texttt{Turks}  \texttt{Loyal} représentent des communautés dans le graphe.
+
+On extrait la troisième covariable \texttt{cloisterville}:
+```{r}
+cloist <- sapply(samplike$val, function(x) x$cloisterville)
+cloist
+```
+et on la rajoute sur le graphe avec une couleur par valeur :
+```{r}
+plot(samplike, vertex.col = factor(cloist), vertex.cex = 3, label = noms)
+```
+
+### Question 3
+
+Pour connaître la forme des régressions possibles : 
+```{r}
+help("terms.ergmm")
+```
+
+On va faire une simple regression sur la distance euclidienne en dimension 2 :
+```{r}
+sol <- ergmm(samplike ~euclidean(d = 2))
+```
+
+Afficher la solution :
+```{r}
+plot(sol) 
+```
+
+On distingue bien 3 groupes. En fait, il s'agit des trois groupes Turks/Outcasts/Loyal comme on peut voir sur le graphique suivant :
+```{r}
+plot(sol, vertex.col = as.numeric(gr), vertex.cex = 2)
+```
+
+Maintenant on combine le latent position model avec une étape de clustering à 3 groupes : 
+```{r}
+sol.clust <- ergmm(samplike ~euclidean(d = 2, G = 3))
+```
+
+On compare les solutions sans et avec clustering :
+```{r}
+par(mfrow = c(1,2))
+plot(sol, vertex.cex = 2)
+plot(sol.clust, vertex.cex = 2)
+```
+
+Les positions estimées sont invariantes par rotation/translation/symétrie. Les estimateurs des positions latentes $Z_i$ sont donc les mêmes.
+
+### Question 4
+
+On simule un jeu de données selon le modèle ajusté :
+```{r}
+mod.sim <- simulate(sol)
+```
+On estime les paramètres du modèle simulé :
+```{r}
+sol.sim <- ergmm(mod.sim ~ euclidean(d = 2))
+```
+On affiche la solution en la comparant aux vraies positions latentes du modèle :
+```{r}
+par(mfrow = c(1,2))
+plot(sol.sim)
+plot(sol)
+```
+On constate que c'est difficile de retrouver le modèle de départ. 
+
+
+
+On fait de même pour le modèle ajusté avec 3 clusters :
+```{r}
+set.seed(14)
+mod.sim.clust <- simulate(sol.clust)
+sol.sim.clust <- ergmm(mod.sim.clust ~euclidean(d = 2, G = 3))
+par(mfrow = c(1,2))
+plot(sol.sim.clust)
+plot(sol.clust)
+```
+ 
+Les clusters sont bien retrouvés, mais il y a une grande 'variabilité' dans les positions latentes. 

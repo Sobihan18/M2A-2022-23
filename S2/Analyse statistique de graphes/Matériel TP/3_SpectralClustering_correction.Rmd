@@ -1,0 +1,791 @@
+---
+title: "Spectral clustering"
+author: "Catherine Matias"
+date: "23/02/2023"
+output:
+  html_document:
+    df_print: paged
+---
+ 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Partie 1 : Algorithmes de spectral clustering
+Le but de cette partie  est d'implementer  différents algorithmes de spectral clustering et d'analyser leur comportement sur quelques graphes simples. 
+
+### Exercice 1
+
+### Vers un algorithme de spectral clustering
+
+ 
+Dans igraph, il semble qu'il existe une fonction permettant de faire plongement (embedding) du graphe dans l'espace des premiers vecteurs propres : `embed_laplacian_matrix()`. Mais vous verrez ci-dessous que ne n'est pas très clair de savoir ce qu'elle fait exactement. 
+
+Par ailleurs, il existe une fonction `spectral_igraph_membership()` mais l'algorithme implémenté est complètement différent de ce que nous avons vu en cours (et lié à la Modularité).
+
+Quoiqu'il en soit,  d'un point de vue  pédagogique, il est intéressant d'écrire notre propre fonction.
+Pour ce faire, au lieu d'écirre directement une fonction complexe, considérons d'abord un exemple simple pour lequel nous effectuons les différentes étapes une à une.
+ 
+
+Créons un graphe avec trois composantes connexes :
+```{r, message=FALSE}
+library("igraph")
+set.seed(1)
+n1 <- 5
+n2 <- 3
+n3 <- 2
+n <- n1 + n2 + n3
+# il faut prendre des grandes valeurs de p sinon on risque d'avoir des sous-graphes non connexes 
+p1 <- 0.85
+p2 <- 0.75
+p3 <- 0.7
+G1 <- sample_gnp(n1, p1)
+G2 <- sample_gnp(n2, p2)
+G3 <- sample_gnp(n3, p3)
+G <- G1 + G2 + G3 # on cree un graphe avec ces 3 sous-graphes
+```
+On vérifie le nombre de composantes connexes : 
+```{r}
+components(G)$no
+```
+et on trace le graphe :
+```{r}
+plot(G)
+```
+
+
+On calcule la matrice d'adjacence, puis la matrice des degrés, et on en déduit le laplacien non normalisé : 
+```{r}
+A <- as_adj(G, sparse = FALSE)
+D <- diag(rowSums(A))
+D_moins1_2 <- diag(1 / sqrt(diag(D))) 
+LN <- diag(n) - D_moins1_2 %*% A %*%D_moins1_2
+round(LN, digits=2)
+```
+ou plus simplement avec une fonction d'igraph : 
+
+```{r}
+LN <- laplacian_matrix(G, norm = TRUE, sparse = FALSE)
+round(LN, digits=2)
+```
+
+Ensuite, on calcule le spectre associé :
+```{r}
+specN <- eigen(LN)
+round(specN$values, digits=3)
+```
+On observe que les valeurs propres sont rangées par ordre décroissant. Les vecteurs propres associés suivent ce même ordre. Notez aussi qu'on a bien la valeur propre 0 qui a la multiplicité 3.
+
+On représente les valeurs propres par ordre croissant :
+```{r}
+plot(1:n, specN$values[n:1], main = "Valeurs propres de L_N",
+     ylab = 'valeurs propres', xlab = 'indices')  
+```
+
+Ou bien avec ggplot : 
+```{r}
+library(ggplot2)
+df.plot <- data.frame(index=1:n,eigenvalue=specN$values[n:1])
+ggplot(data=df.plot, aes(x=index,y=eigenvalue)) +geom_point() +labs(title="Valeurs propres de L_N",  ylab = 'valeurs propres', xlab = 'indices')  
+```
+
+
+
+Le eigengap ou trou spectral est très net  entre la troisième et la quatrième valeur propre, et 0 est valeur propre de multiplicité 3, correspondant aux  trois composantes connexes.
+ Regardons les trois vecteurs propres associés a 0 (rappel ce sont les trois derniers vecteurs) : 
+```{r}
+eigvecMat_U <- specN$vectors[ , n:(n-2)]
+round(eigvecMat_U, digits=3)
+```
+ 
+   
+On voit que ces trois vecteurs propres, stockés dans la matrice *eigvecMat_U* (dans le cours $U$), sont composés de beaucoup de 0. En plus, sur chaque ligne il n'y a qu'une valeur non nulle, c'est-à-dire les vecteurs ont des supports différents (ce n'est pas toujours le cas). Par conséquent,  le clustering de ces lignes est immédiat ici. 
+
+Néanmoins, avant de faire du clustering, selon l'algorithme de clustering spectral normalisé, il convient de  renormaliser les lignes de la matrice :
+```{r}
+eigvecMat_U <- t(apply(eigvecMat_U, 1, function (x) return(x / sqrt(sum(x^2)))))
+eigvecMat_U
+```
+Maintenant le clustering des lignes est encore plus évident !
+ 
+
+Faisons-le en utilisant l'algorithme $k$-means :
+```{r}
+res <- kmeans(eigvecMat_U, centers = 3, nstart = 10)
+res$cluster
+plot(G, vertex.color = res$cluster)
+```
+
+Le clustering est parfait : on retrouve exactement les trois composantes connexes du graphe.
+
+### La fonction spec.clust.norm()
+
+En rassemblant les morceaux ci-dessus, on peut écrire une fonction générale pour le clustering spectral normalisé.
+Ici *G* désigne un objet d'*igraph*, et *K* le nombre de clusters souhaité.
+
+```{r}
+spec.clust.norm <- function(G, K, fig = TRUE){
+  n <- vcount(G)
+  LN <- laplacian_matrix(G, norm = TRUE, sparse = FALSE)
+  specN <- eigen(LN)
+  if (fig){
+    eigenplot <- ggplot(data=data.frame(index=1:n,eigenvalue=specN$values[n:1]), aes(x=index,y=eigenvalue)) +geom_point() +labs(title="Valeurs propres de L_N",  ylab = 'valeurs propres', xlab = 'indices') 
+    print(eigenplot)
+  }
+  eigvecMat_U <- specN$vectors[ , n:(n-K+1)]
+  eigvecMat_U <- t(apply(eigvecMat_U, 1, function (x) return(x / sqrt(sum(x^2)))))
+  clustering <- kmeans(eigvecMat_U, centers = K, nstart = 10)$cluster
+  return(clustering)
+}
+```
+
+### Test de la fonction spec.clust.norm()
+
+Test sur le graphe $G$ simulé en début du notebook :
+```{r}
+spec.clust.norm(G, 3)
+```
+
+```{r}
+spec.clust.norm(G, 4, fig=FALSE)
+```
+Cela a l'air de marcher. 
+
+MAIS ça ne donne pas la même chose que 
+```{r}
+U <- embed_laplacian_matrix(G,no=4,which="sa",type="I-DAD",scaled=FALSE)$X
+Unorm <- t(apply(U, 1, function (x) return(x / sqrt(sum(x^2)))))
+kmeans(Unorm,centers=4,nstart=20)$cluster
+```
+Je sais pas bien ce que fait cette fonction "embed_laplacian_matrix" (les options sont peu claires).
+
+
+### Absolute spectral clustering (basé sur $L_\text{abs})$
+
+On écrit une fonction *spec.clust.abs()* en modifiant la fonction *spec.clust.norm()*. La différence est le choix du laplacien, le choix des vecteurs propres et  l'absence  de normalisation de la matrice des vecteurs propres :
+
+```{r}
+spec.clust.abs <- function(G, K, fig = TRUE){
+  n <- vcount(G)
+  LN <- laplacian_matrix(G, norm = TRUE, sparse = FALSE)
+  Labs <- diag(1, n) - LN
+  specAbs <- eigen(Labs)
+  if (fig){
+     eigenplot <- ggplot(data=data.frame(index=1:n,eigenvalue=abs(specAbs$values[n:1])), aes(x=index,y=eigenvalue)) +geom_point() +labs(title="Valeurs propres en valeur absolue de L_abs",  ylab = 'valeurs absolues des valeurs propres', xlab = 'indices') 
+    print(eigenplot)
+  }
+        
+  index <- order(abs(specAbs$values), decreasing = TRUE)[1:K]
+  eigvecMat_U <- specAbs$vectors[, index]
+  clustering <- kmeans(eigvecMat_U, centers = K, nstart = 10)$cluster
+  return(clustering)
+}
+```
+ 
+
+On teste :
+```{r}
+res<- spec.clust.abs(G, 3)
+```
+
+Il est intéressant d'observer qu'il y a 5 valeurs propres égales à 1 en valeur absolue ! On visualise le clustering :
+
+```{r}
+res
+```
+
+```{r}
+plot(G, vertex.color = res)
+```
+
+Les clusters trouvés ne correspondent pas tous aux composantes connexes, il y a aussi des structures biparties. Ce n'est pas absurde, mais pas ce qu'on cherche.
+
+Nota bene : en pratique, l'absolute spectral clustering n'est pas fait pour être appliqué sur un graphe avec plusieurs composantes connexes. 
+
+On peut refaire avec plus de clusters :
+
+```{r}
+res <- spec.clust.abs(G, 5, fig = FALSE)
+plot(G, vertex.color = res)
+```
+
+### Tests sur un graphe connexe 
+On ajoute quelques arrêtes à $G$ afin de le rendre connexe : 
+```{r}
+G.con<-add_edges(G,c(4,7,6,9)) 
+plot(G.con)
+
+res.norm <- spec.clust.norm(G.con, 3)
+plot(G.con, vertex.color = res.norm)
+
+res.abs <- spec.clust.norm(G.con, 3)
+plot(G.con, vertex.color = res.abs)
+```
+
+Le trou spectral est beaucoup moins net. Les deux algorithmes ici donnent le même clustering, qui fait sens du point de vue des communautés. 
+
+
+
+### Exercice 2
+### Application à un graphe avec deux communautés faiblement connectées entre elles
+
+On peut utiliser le Stochastic Block Model (SBM) que l'on définira plus tard dans le cours : il s'agit d'un modèle de mélange de graphes. 
+
+```{r}
+n <- 25 # number of nodes
+Q <- 2 # number of clusters
+pi <- c(0.4, 0.6) # groups proportions  
+effectifs <- n * pi
+connectivite_matrix <- matrix(c(0.9, 0.15,
+                                0.15, 0.95), nrow=Q) # matrix of connectivities per groups pairs
+G <- sample_sbm(n, pref.matrix = connectivite_matrix, block.sizes = effectifs)
+plot(G)
+```
+
+```{r} 
+res.norm <- spec.clust.norm(G, 2)
+```
+```{r}
+plot(G, vertex.color = res.norm)
+```
+
+Le eigengap (entre la deuxième et troisième valeur propre) indique la présence de deux groupes. On retrouve parfaitement les deux communautés.
+
+```{r} 
+res.abs <- spec.clust.abs(G, 2)
+```
+```{r}
+plot(G, vertex.color = res.abs)
+```
+
+Les mêmes résultats sont obtenus pour l'absolute spectral clustering. 
+
+
+## Application à un graphe bipartie (ou presque)
+
+```{r}
+n1<- 20
+n2<- 15
+G <- sample_bipartite(n1,n2,p=0.7)
+plot(G,layout=layout_as_bipartite)
+```
+```{r}
+res <- spec.clust.norm(G, 2)
+plot(G, vertex.color = res,layout=layout_as_bipartite) 
+```
+Ce clustering normalisé ne voit pas du tout les parties. 
+
+```{r}
+res <- spec.clust.abs(G, 2)
+plot(G, vertex.color = res,layout=layout_as_bipartite) 
+```
+Celui-ci trouve très facilement les deux parties. 
+
+
+## Application à un graphe avec deux étoiles connectées 
+
+```{r}
+G1 <- make_star(7, mode = "undirected")
+G2 <- make_star(10, mode = "undirected")
+G <- G1 + G2 
+plot(G)
+```
+
+```{r}
+G <- add.edges(G, c(7, 9))
+plot(G)
+```
+
+On fait le clustering spectral avec le Laplacien normalisé :
+```{r}
+res <- spec.clust.norm(G, 2)
+plot(G, vertex.color = res)
+```
+
+On retrouve le spectre typique d'un graphe en forme d'étoile. Les deux clusters correspondent aux étoiles.
+
+On fait le clustering spectral avec le Laplacien $L_{abs}$ :
+```{r}
+res <- spec.clust.abs(G, 2)
+plot(G, vertex.color = res)
+```
+
+Cette fois, on détecte les centres d'étoile ainsi que les noeuds périphiques. C'est une toute autre interprétation du graphe ou des clusters.
+
+On peut aussi tester avec plus de groupes : 
+```{r}
+res <- spec.clust.abs(G, 3)
+plot(G, vertex.color = res)
+```
+Les deux 'centres'hubs' sont mis dans le même groupe, et les deux autres clusters sont les périhpéries de chacun des hubs.
+
+
+
+
+## Exercice 3
+
+### Graphe réel :  friends  
+ 
+Pour faire du clustering, on s'intéresse à ce graphe en tant que graphe non dirigé. 
+
+```{r}
+friends <- read.table(file = '../data/Friendship-network_data_2013.csv')
+G <- graph_from_data_frame(friends, directed = FALSE)  # non dirige
+plot(G)
+```
+
+En analysant la matrice d'adjacence, on observe qu'il y a des arêtes avec la valeur 2 (c'est parce qu'on avait un graphe dirigé à l'origine) :
+```{r}
+A.friends <- as_adj(G, sparse = FALSE)   
+table(A.friends)
+```
+
+On remplace les 2 par des 1 pour revenir à un graphe binaire :
+```{r}
+A.friends[A.friends == 2] <- 1
+G <- graph_from_adjacency_matrix(A.friends, mode = 'undirected')
+```
+
+
+Spectral clustering normalisé : il y a trois valeurs propres nulles (donc 3 composantes connexes).
+```{r echo=F}
+# on met une graine pour fixer les résultats
+set.seed(5)
+```
+
+
+```{r}
+res <- spec.clust.norm(G, 3)
+```
+
+```{r}
+table(res)
+plot(G, vertex.color = res)
+```
+
+Deux petites composantes connexes ont chacune 3 noeuds, et la grande composante a  128 neouds. 
+
+
+Absolute spectral clustering : il y a 4 valeurs propres égales à 1 en valeur absolue. 
+```{r echo=F}
+set.seed(2)
+```
+
+```{r}
+res <- spec.clust.abs(G, 4)
+table(res)
+plot(G, vertex.color = res)
+V(G)[which(res == 2)]
+```
+ 
+On constate ue l'absolute spectral clustering est très sensible aux morceaux bi-parties du graphe. 
+
+## Partie 2 : Graphes de similarité 
+
+
+## Question 1
+Générons les données :
+```{r}
+set.seed(111)
+library(mlbench)
+n <- 100
+simu <- mlbench.spirals(100, 1, 0.025)  
+names(simu)
+data <- simu$x
+head(data)
+plot(data)
+simu$classes
+table(simu$classes)
+plot(data, col = simu$classes)
+```
+
+On voit deux spirales, et on aimerait qu'un algorithme de clustering détecte ces deux groupes automatiquement.
+
+## Question 2
+
+Essayons avec $k$-means appliqué aux données brutes :
+```{r}
+data <- simu$x
+result.kmeans <- kmeans(scale(data), centers = 2, nstart = 100)
+plot(data, col = result.kmeans$cluster)
+```
+
+Visiblement, ça ne marche pas, $k$-means ne détecte pas les deux spirales.
+
+## Question 3
+
+### Construction d'un graphe dense de similarité gaussienne 
+
+Définissons des fonctions auxiliaires pour la construction d'un graphe de similarité gaussienne :
+```{r}
+# calcul de la similiarité gaussienne entre deux points  x1=(abs1, ord1), x2=(abs2, ord2) dans R^2
+simi.exp <- function(x1, x2, sigma = 1){   
+  return( exp(-sum((x1 - x2)^2) /(2 * sigma^2)) )
+}
+
+
+# construction de la matrice de similarité gaussienne d'un jeu de données
+similarity <- function(data) {
+  n <- nrow(data)
+  S <- matrix(0, nrow = n, ncol = n)
+  for(i in 1:(n-1)) {
+    for(j in (i+1):n) {
+      S[i, j] <- simi.exp(data[i, ], data[j, ])
+    }
+  }
+  S <- S + t(S)  # symmétriser la matrice
+  return(S)
+}
+```
+Construisons le graphe pour nos données de spirales :
+```{r, warning=F, message=F}
+A.dense <- similarity(data)
+library(igraph)
+G.dense <- graph_from_adjacency_matrix(A.dense, mode = "undirected", 
+                                       weighted = TRUE)  # graphe valué
+plot(G.dense)
+```
+
+
+### Spectral clustering normalisé
+
+```{r}
+cl.norm <- spec.clust.norm(G.dense, K = 2)
+```
+
+Visualisons le clustering obtenu :
+```{r}
+plot(data, col = cl.norm)
+```
+
+Le résultat n'est pas bon, on n'a pas retrouvé les deux spirales.
+
+### Analyse des nouveaux points
+
+Regardons les deux premiers vecteurs propres (après normalisation) :
+```{r}
+K <- 2
+LN <- laplacian_matrix(G.dense, norm = TRUE, sparse = FALSE)
+specN <- eigen(LN)
+eigvecMat_U <- specN$vectors[ , n:(n-K+1)]
+eigvecMat_U <- t(apply(eigvecMat_U, 1, 
+                       function (x) return(x / sqrt(sum(x^2)))))
+
+plot(eigvecMat_U[simu$classes == 1, 1], 
+     eigvecMat_U[simu$classes == 1, 2],
+     col = 'red', xlim = range(eigvecMat_U[ , 1]),
+     ylim = range(eigvecMat_U[ , 2]))
+points(eigvecMat_U[simu$classes == 2, 1], 
+       eigvecMat_U[simu$classes == 2, 2],
+       col = 'blue')
+```
+
+On observe que les points dans le nouvel espace ne sont pas du tout séparés selon leurs classes initiales. Donc, ce n'est pas étonnant que le clustering ne fonctionne pas.
+
+Comme on fera le même type d'analyse plus tard sur d'autres exemple, on va écrire un petite fonction pour nous simplifier la vie :
+
+```{r}
+plot.new.points <- function(G,K=2){
+  LN <- laplacian_matrix(G, norm = TRUE, sparse = FALSE)
+  specN <- eigen(LN)
+  eigvecMat_U <- specN$vectors[ , n:(n-K+1)]
+  eigvecMat_U <- t(apply(eigvecMat_U, 1, 
+                         function (x) return(x / sqrt(sum(x^2)))))
+
+  # Warning: below is only for two clusters
+  plot(eigvecMat_U[simu$classes == 1, 1], 
+       eigvecMat_U[simu$classes == 1, 2],
+       col = 'red', xlim = range(eigvecMat_U[ , 1]),
+       ylim = range(eigvecMat_U[ , 2]))
+  points(eigvecMat_U[simu$classes == 2, 1], 
+         eigvecMat_U[simu$classes == 2, 2],
+         col = 'blue')
+}
+plot.new.points(G)
+```
+
+
+### Absolute spectral clustering
+```{r}
+cl.abs <- spec.clust.abs(G.dense, 2)
+```
+
+Il n'y pas de valeurs propres négatives, donc on obtient le même clustering qu'avec le spectral clustering normalisé.
+```{r}
+plot(data, col = cl.abs)
+```
+
+## Question 4
+
+### a) Graphe de $\varepsilon$-voisinage avec quantile d'ordre $0.75$
+
+#### Construction du graphe
+
+```{r}
+sim.vector <- A.dense[upper.tri(A.dense, diag = FALSE)] # prendre toutes les entrées de la matrice triangulaire supérieure sauf diagonale
+eps <- quantile(sim.vector, probs = 0.75) # quantile à 75%
+A.eps75 <- A.dense
+# on enlève 75% des arêtes par rapport au cas dense et on considère un graphe binaire 
+A.eps75[A.dense < eps] <- 0
+A.eps75[A.dense >= eps] <- 1
+G.eps75 <- graph_from_adjacency_matrix(A.eps75, mode = 'undirected')
+```
+
+#### Spectral clustering normalisé
+```{r}
+cl.norm <- spec.clust.norm(G.eps75, 2)
+```
+```{r}
+plot(data, col = cl.norm)
+```
+```{r}
+plot(G.eps75)
+```
+
+En effet le graphe n'avait pas beaucoup de sens.
+
+#### Absolute spectral clustering
+```{r}
+cl.abs <- spec.clust.abs(G.eps75, 2)
+```
+```{r}
+plot(data, col = cl.abs)
+```
+
+### b) Graphe de $\varepsilon$-voisinage avec quantile d'ordre $0.95$
+On modifie le seuil :
+```{r}
+eps <- quantile(sim.vector, probs = 0.95) # quantile à 95%
+A.eps95 <- A.dense
+# on enlève 95% des arêtes par rapport au cas dense et on considère un graphe binaire 
+A.eps95[A.dense < eps] <- 0
+A.eps95[A.dense >= eps] <- 1
+G.eps95 <- graph_from_adjacency_matrix(A.eps95, mode = 'undirected')
+```
+
+#### Spectral clustering normalisé
+```{r}
+cl.norm <- spec.clust.norm(G.eps95, 2)
+```
+```{r}
+plot(data, col = cl.norm)
+```
+
+ça marche ! 
+
+
+Analysons ce graphe plus en détail :
+```{r}
+mean(rowSums(A.eps95))
+```
+
+A titre de comparaison, on avait :
+```{r}
+mean(rowSums(A.eps75))
+```
+
+Nombre de composantes connexes :
+```{r}
+plot(G.eps95)
+components(G.eps95)$no
+```
+Le graphe a deux composantes connexes.
+
+Pour les nouveaux points (dans l'embedding space) on a :
+```{r}
+plot.new.points(G.eps95)
+```
+
+Dans le nouvel espace les clusters  sont bien séparés (et tous les points d'un même cluster se superposent !)  et donc pour $k$-means il est facile de faire le clustering.
+
+#### Absolute spectral clustering
+```{r}
+cl.abs <- spec.clust.abs(G.eps95, 2)
+```
+```{r}
+plot(data, col = cl.abs)
+```
+
+Mêmes conclusions ici. 
+
+### c) Graphe des $p$ plus proches voisins mutuels avec $p=2\lfloor \log(n)\rfloor$
+
+```{r}
+p <- 2 * floor(log(n))
+p
+A.p.dir <- A.dense   # on fabrique d'abord un graphe dirigé
+for (i in 1:n){
+  ind <- order(A.dense[i, ], decreasing = TRUE)
+  A.p.dir[i, ind[(p+1):n]] <- 0 
+}
+# Ensuite on fabrique un graphe non dirigé avec la règle ET (plus proches voisins mutuels !) :
+# on met à 0 les entrées telles que i non voisin de j OU j non voisin de i
+A.p.mutuel <- A.p.dir
+A.p.mutuel[ A.p.mutuel != t(A.p.mutuel) ] <- 0
+G.p.mutuel <- graph_from_adjacency_matrix(A.p.mutuel, mode = 'undirected', weighted = TRUE)
+plot(G.p.mutuel)
+```
+
+
+#### Spectral clustering normalisé
+```{r}
+cl.norm <- spec.clust.norm(G.p.mutuel, 2)
+```
+```{r}
+plot(data, col = cl.norm)
+```
+
+#### Absolute spectral clustering
+```{r}
+cl.abs <- spec.clust.abs(G.p.mutuel, 2)
+```
+```{r}
+plot(data, col = cl.abs)
+```
+
+### d) Graphe des $p$ plus proches voisins mutuels avec $p=2$
+
+```{r}
+p <- 2
+A.p_2.dir <- A.dense   # on fabrique d'abord un graphe dirigé
+for (i in 1:n){
+  ind <- order(A.dense[i, ], decreasing = TRUE)
+  A.p_2.dir[i, ind[(p+1):n]] <- 0 
+}
+# Ensuite on fabrique un graphe non dirigé avec la règle ET (plus proches voisins mutuels !) :
+# on met à 0 les entrées telles que i non voisin de j OU j non voisin de i
+A.p_2.mutuel <- A.p_2.dir
+A.p_2.mutuel[ A.p_2.mutuel != t(A.p_2.mutuel) ] <- 0
+G.p_2.mutuel <- graph_from_adjacency_matrix(A.p_2.mutuel, mode = 'undirected', weighted = TRUE)
+```
+
+#### Spectral clustering normalisé
+```{r}
+cl.norm <- spec.clust.norm(G.p_2.mutuel, 2)
+```
+```{r}
+plot(data, col = cl.norm)
+```
+
+ça marche !
+
+Analysons ce graphe plus en détail :
+```{r}
+mean(rowSums(A.p_2.mutuel))
+```
+Nombre de composantes connexes :
+```{r}
+components(G.p_2.mutuel)$no
+```
+Le graphe a deux composantes connexes ; il s'agit des deux clusters recherchés.
+
+```{r}
+plot.new.points(G.p_2.mutuel)
+```
+
+Les nouveaux points sont parfaitement séparés selon leurs clusters. En effet, il n'y a que deux valeurs différentes; cela vient du fait qu'il y a deux composantes connexes et donc dans la matrice des vecteurs propres se trouvent des vecteurs indicateurs $\mathbb 1_C$.
+
+
+#### Absolute spectral clustering
+```{r echo=F}
+set.seed(22222)
+```
+```{r}
+cl.abs <- spec.clust.abs(G.p_2.mutuel, 2)
+```
+
+Le spectre est symétrique, ce qui indique que le graphe est biparti. En effet, le clustering obtenu reflète le caractère biparti du graphe :
+```{r}
+plot(data, col = cl.abs)
+```
+
+En fait, le spectre est parfaitement symétrique, ce qui indique que le graphe est biparti. De plus, la multiplicité de 1 est 2, donc il y a exactement deux composantes connexes (= les spirales).  La structure bipartie se retrouve à l'intérieur de chaque spirale :
+```{r}
+cl.abs <- spec.clust.abs(G.p_2.mutuel, 4, fig = FALSE)
+plot(data, col = cl.abs)
+```
+
+### e) Graphe des $p$ plus proches voisins simples avec $p=2\lfloor \log(n)\rfloor$
+On reprend le graphe dirigé **A.p.dir** pour fabriquer le graphe des $p$  plus proches voisins simples en mettant à  0 les entrées telles que $i$ non voisin de $j$ **et** $j$ non voisin de $i$ :
+```{r}
+B <- A.p.dir + t(A.p.dir)
+A.p.simple <- matrix(0, n, n)
+A.p.simple[B > 0] <- A.dense[B > 0]
+G.p.simple <- graph_from_adjacency_matrix(A.p.simple, mode = 'undirected', weighted = TRUE)
+```
+
+#### Spectral clustering normalisé
+```{r}
+cl.norm <- spec.clust.norm(G.p.simple, 2)
+```
+```{r}
+plot(data, col = cl.norm)
+```
+
+#### Absolute spectral clustering
+```{r}
+cl.abs <- spec.clust.abs(G.p.simple, 2)
+```
+```{r}
+plot(data, col = cl.abs)
+```
+
+### f) Graphe des $p$ plus proches voisins simples avec $p=2$
+On fait pareil pour $p=2$ :
+```{r}
+B <- A.p_2.dir + t(A.p_2.dir)
+A.p_2.simple <- matrix(0, n, n)
+A.p_2.simple[B > 0] <- A.dense[B > 0]
+G.p_2.simple <- graph_from_adjacency_matrix(A.p_2.simple, mode = 'undirected', weighted = TRUE)
+```
+
+#### Spectral clustering normalisé
+```{r}
+cl.norm <- spec.clust.norm(G.p_2.simple, 2)
+```
+```{r}
+plot(data, col = cl.norm)
+```
+
+ça marche !
+
+Analysons ce graphe plus en détail :
+```{r}
+mean(rowSums(A.p_2.simple))
+```
+Nombre de composantes connexes :
+```{r}
+components(G.p_2.simple)$no
+```
+
+Le graphe a deux composantes connexes ; il s'agit des deux clusters recherchés.
+
+```{r}
+plot.new.points(G.p_2.simple)
+```
+
+#### Absolute spectral clustering
+```{r}
+cl.abs <- spec.clust.abs(G.p_2.simple, 2)
+```
+```{r}
+plot(data, col = cl.abs)
+```
+
+ça marche aussi !
+
+
+# Conclusions
+
+On voit que le choix du graphe de similarité joue énormément sur le résultat du clustering. En revanche, il n'y a pas un graphe qui produit toujours les meilleurs résultats. 
+
+
+## Package R : kernlab.
+Spectral clustering sur données avec par défaut matrice similarité basé sur "noyau gaussien" et p plus proche voisin simple avec p=2
+```{r}
+library(kernlab)
+sc <- specc(data, centers = 2)  # en 2 clusters
+plot(data, col = sc)
+```
+
+
